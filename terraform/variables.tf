@@ -1,6 +1,6 @@
 variable "location" {
   description = "Azure region for all resources"
-  default     = "eastus"
+  default     = "centralindia"
 }
 
 variable "prefix" {

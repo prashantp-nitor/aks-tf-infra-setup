@@ -8,7 +8,7 @@ on:
     paths:
       - 'terraform/**'
       - 'k8s/**'
-      - '.github/workflows/aks-terraform.yml'
+      - '.github/workflows/terraform-aks.yml'
 
 jobs:
   deploy:
