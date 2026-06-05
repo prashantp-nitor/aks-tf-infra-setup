@@ -1,33 +1,59 @@
 resource "azurerm_resource_group" "rg" {
   name     = "${var.prefix}-rg"
   location = var.location
+  tags     = local.tags
 }
 
-resource "azurerm_kubernetes_cluster" "aks" {
-  name                = "${var.prefix}-aks"
-  location            = azurerm_resource_group.rg.location
+module "network" {
+  source = "./modules/network"
+
   resource_group_name = azurerm_resource_group.rg.name
-  dns_prefix          = "${var.prefix}-aks"
+  location            = azurerm_resource_group.rg.location
+  prefix              = var.prefix
+  vnet_address_space  = var.vnet_address_space
+  aks_subnet_cidr     = var.aks_subnet_cidr
+  tags                = local.tags
+}
 
-  kubernetes_version = null
-  node_resource_group = "${var.prefix}-aks-nodes"
+module "aks" {
+  source = "./modules/aks"
 
-  default_node_pool {
-    name       = "system"
-    vm_size    = var.vm_size
-    node_count = var.node_count
-    type       = "VirtualMachineScaleSets"
-    os_disk_size_gb = 60
-  }
+  resource_group_name   = azurerm_resource_group.rg.name
+  location              = azurerm_resource_group.rg.location
+  prefix                = var.prefix
+  environment           = var.environment
+  kubernetes_version    = var.kubernetes_version
+  aks_sku_tier          = var.aks_sku_tier
+  aks_subnet_id         = module.network.aks_subnet_id
+  service_cidr          = var.service_cidr
+  dns_service_ip        = var.dns_service_ip
+  system_node_vm_size   = var.system_node_vm_size
+  system_node_count     = var.system_node_count
+  system_node_min_count = var.system_node_min_count
+  system_node_max_count = var.system_node_max_count
+  tags                  = local.tags
+}
 
-  identity {
-    type = "SystemAssigned"
-  }
+module "user_node_pool" {
+  source = "./modules/node-pool"
 
-  network_profile {
-    network_plugin = "kubenet"
-    outbound_type  = "loadBalancer"
-  }
+  name                  = "user"
+  kubernetes_cluster_id = module.aks.cluster_id
+  vm_size               = var.user_node_vm_size
+  min_count             = var.user_node_min_count
+  max_count             = var.user_node_max_count
+  subnet_id             = module.network.aks_subnet_id
+  environment           = var.environment
+  tags                  = local.tags
+}
 
-  role_based_access_control_enabled = true
+module "acr" {
+  source = "./modules/acr"
+
+  resource_group_name        = azurerm_resource_group.rg.name
+  location                   = azurerm_resource_group.rg.location
+  acr_name                   = local.acr_name
+  acr_sku                    = var.acr_sku
+  kubelet_identity_object_id = module.aks.kubelet_identity_object_id
+  tags                       = local.tags
 }
