@@ -1,14 +1,12 @@
-resource "azurerm_resource_group" "rg" {
-  name     = "${var.prefix}-rg"
-  location = var.location
-  tags     = local.tags
+data "azurerm_resource_group" "rg" {
+  name = var.resource_group_name
 }
 
 module "network" {
   source = "./modules/network"
 
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+  location            = data.azurerm_resource_group.rg.location
   prefix              = var.prefix
   vnet_address_space  = var.vnet_address_space
   aks_subnet_cidr     = var.aks_subnet_cidr
@@ -18,8 +16,8 @@ module "network" {
 module "aks" {
   source = "./modules/aks"
 
-  resource_group_name   = azurerm_resource_group.rg.name
-  location              = azurerm_resource_group.rg.location
+  resource_group_name   = data.azurerm_resource_group.rg.name
+  location              = data.azurerm_resource_group.rg.location
   prefix                = var.prefix
   environment           = var.environment
   kubernetes_version    = var.kubernetes_version
@@ -50,8 +48,8 @@ module "user_node_pool" {
 module "acr" {
   source = "./modules/acr"
 
-  resource_group_name        = azurerm_resource_group.rg.name
-  location                   = azurerm_resource_group.rg.location
+  resource_group_name        = data.azurerm_resource_group.rg.name
+  location                   = data.azurerm_resource_group.rg.location
   acr_name                   = local.acr_name
   acr_sku                    = var.acr_sku
   kubelet_identity_object_id = module.aks.kubelet_identity_object_id

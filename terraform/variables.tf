@@ -1,6 +1,11 @@
+variable "resource_group_name" {
+  description = "Name of the existing resource group"
+  default     = "AZET-RG-Daas-Platform"
+}
+
 variable "location" {
   description = "Azure region for all resources"
-  default     = "centralindia"
+  default     = "eastus"
 }
 
 variable "prefix" {
