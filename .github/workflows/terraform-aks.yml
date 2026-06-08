@@ -20,7 +20,6 @@ jobs:
     outputs:
       rg:  ${{ steps.tf.outputs.RG }}
       aks: ${{ steps.tf.outputs.AKS }}
-      acr: ${{ steps.tf.outputs.ACR }}
 
     steps:
       - name: Checkout
@@ -39,9 +38,46 @@ jobs:
         with:
           terraform_wrapper: false
 
+      # Restore state from previous run so Terraform knows what already exists
+      - name: Restore Terraform State
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-state
+          path: terraform/
+        continue-on-error: true
+
       - name: Terraform Init
         working-directory: terraform
         run: terraform init
+
+      # Import any Azure resources that exist but are not yet tracked in state.
+      # Safe to run every time — already-tracked resources are silently skipped (|| true).
+      - name: Import Existing Resources
+        working-directory: terraform
+        run: |
+          SUB=$(az account show --query id -o tsv)
+          RG="AZET-RG-Daas-Platform"
+
+          echo "==> Importing network resources..."
+          terraform import module.network.azurerm_virtual_network.vnet \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Network/virtualNetworks/ppowar-vnet" 2>/dev/null || true
+
+          terraform import module.network.azurerm_subnet.aks \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Network/virtualNetworks/ppowar-vnet/subnets/ppowar-aks-subnet" 2>/dev/null || true
+
+          terraform import module.network.azurerm_network_security_group.aks \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Network/networkSecurityGroups/ppowar-aks-nsg" 2>/dev/null || true
+
+          terraform import module.network.azurerm_subnet_network_security_group_association.aks \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Network/virtualNetworks/ppowar-vnet/subnets/ppowar-aks-subnet" 2>/dev/null || true
+
+          echo "==> Importing AKS cluster..."
+          terraform import module.aks.azurerm_kubernetes_cluster.aks \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.ContainerService/managedClusters/ppowar-aks" 2>/dev/null || true
+
+          echo "==> Importing user node pool..."
+          terraform import 'module.user_node_pool.azurerm_kubernetes_cluster_node_pool.this' \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.ContainerService/managedClusters/ppowar-aks/agentPools/user" 2>/dev/null || true
 
       - name: Terraform Plan
         working-directory: terraform
@@ -51,13 +87,21 @@ jobs:
         working-directory: terraform
         run: terraform apply -auto-approve tfplan
 
+      # Always save state so the next run can restore it
+      - name: Save Terraform State
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state
+          path: terraform/terraform.tfstate
+          overwrite: true
+
       - name: Get Terraform Outputs
         id: tf
         working-directory: terraform
         run: |
           echo "RG=$(terraform output -raw resource_group_name)"  >> $GITHUB_OUTPUT
           echo "AKS=$(terraform output -raw aks_name)"            >> $GITHUB_OUTPUT
-          echo "ACR=$(terraform output -raw acr_login_server)"    >> $GITHUB_OUTPUT
 
   # ────────────────────────────────────────────────────────────────────────────
   bootstrap:
@@ -126,7 +170,6 @@ jobs:
         run: |
           echo "──────────────────────────────────────────"
           echo " AKS Cluster : ${{ needs.infra.outputs.aks }}"
-          echo " ACR Server  : ${{ needs.infra.outputs.acr }}"
           echo "──────────────────────────────────────────"
           kubectl get nodes
           echo ""

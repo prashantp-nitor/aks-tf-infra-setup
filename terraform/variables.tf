@@ -87,8 +87,3 @@ variable "dns_service_ip" {
   default     = "10.1.0.10"
 }
 
-# ── ACR ───────────────────────────────────────────────────────────────────────
-variable "acr_sku" {
-  description = "ACR SKU: Basic | Standard | Premium"
-  default     = "Standard"
-}
