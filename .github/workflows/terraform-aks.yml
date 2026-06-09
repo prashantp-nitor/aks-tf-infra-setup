@@ -158,6 +158,9 @@ jobs:
               --dry-run=client -o yaml | kubectl apply -f -
           done
 
+      - name: Apply Boutique Ingress
+        run: kubectl apply -f k8s/boutique-ingress.yaml
+
       - name: Add Helm repositories
         run: |
           helm repo add jetstack      https://charts.jetstack.io
