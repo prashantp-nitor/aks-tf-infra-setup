@@ -21,10 +21,8 @@ jobs:
       contents: read
 
     outputs:
-      rg:         ${{ steps.tf.outputs.RG }}
-      aks:        ${{ steps.tf.outputs.AKS }}
-      acr_name:   ${{ steps.tf.outputs.ACR_NAME }}
-      acr_server: ${{ steps.tf.outputs.ACR_SERVER }}
+      rg:  ${{ steps.tf.outputs.RG }}
+      aks: ${{ steps.tf.outputs.AKS }}
 
     steps:
       - name: Checkout
@@ -43,7 +41,6 @@ jobs:
         with:
           terraform_wrapper: false
 
-      # Restore state from previous run so Terraform knows what already exists
       - name: Restore Terraform State
         uses: actions/download-artifact@v4
         with:
@@ -55,8 +52,6 @@ jobs:
         working-directory: terraform
         run: terraform init
 
-      # Import any Azure resources that exist but are not yet tracked in state.
-      # Safe to run every time — already-tracked resources are silently skipped (|| true).
       - name: Import Existing Resources
         working-directory: terraform
         run: |
@@ -84,10 +79,6 @@ jobs:
           terraform import 'module.user_node_pool.azurerm_kubernetes_cluster_node_pool.this' \
             "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.ContainerService/managedClusters/ppowar-aks/agentPools/user" 2>/dev/null || true
 
-          echo "==> Importing ACR..."
-          terraform import module.acr.azurerm_container_registry.acr \
-            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.ContainerRegistry/registries/ppowaracr" 2>/dev/null || true
-
       - name: Terraform Plan
         working-directory: terraform
         run: terraform plan -out=tfplan
@@ -96,7 +87,6 @@ jobs:
         working-directory: terraform
         run: terraform apply -auto-approve tfplan
 
-      # Always save state so the next run can restore it
       - name: Save Terraform State
         if: always()
         uses: actions/upload-artifact@v4
@@ -111,8 +101,6 @@ jobs:
         run: |
           echo "RG=$(terraform output -raw resource_group_name)"  >> $GITHUB_OUTPUT
           echo "AKS=$(terraform output -raw aks_name)"            >> $GITHUB_OUTPUT
-          echo "ACR_NAME=$(terraform output -raw acr_name)"       >> $GITHUB_OUTPUT
-          echo "ACR_SERVER=$(terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
 
   # ────────────────────────────────────────────────────────────────────────────
   bootstrap:
@@ -153,25 +141,21 @@ jobs:
       - name: Apply namespaces
         run: kubectl apply -f k8s/namespaces.yaml
 
-      - name: Create ACR ImagePullSecret
-        run: |
-          ACR_PASSWORD=$(az acr credential show \
-            --name ${{ needs.infra.outputs.acr_name }} \
-            --query "passwords[0].value" -o tsv)
-
-          for ns in default monitoring; do
-            kubectl create secret docker-registry acr-pull-secret \
-              --docker-server=${{ needs.infra.outputs.acr_server }} \
-              --docker-username=${{ needs.infra.outputs.acr_name }} \
-              --docker-password="$ACR_PASSWORD" \
-              --namespace=$ns \
-              --dry-run=client -o yaml | kubectl apply -f -
-          done
-
       - name: Apply resource limits to all namespaces
         run: |
           for ns in default monitoring ingress-nginx cert-manager; do
             kubectl apply -f k8s/limit-range.yaml -n $ns
+          done
+
+      - name: Create Docker Hub ImagePullSecret
+        run: |
+          for ns in default monitoring; do
+            kubectl create secret docker-registry dockerhub-pull-secret \
+              --docker-server=https://index.docker.io/v1/ \
+              --docker-username=${{ secrets.DOCKERHUB_USERNAME }} \
+              --docker-password=${{ secrets.DOCKERHUB_TOKEN }} \
+              --namespace=$ns \
+              --dry-run=client -o yaml | kubectl apply -f -
           done
 
       - name: Add Helm repositories
@@ -202,11 +186,6 @@ jobs:
         run: |
           echo "──────────────────────────────────────────"
           echo " AKS Cluster : ${{ needs.infra.outputs.aks }}"
-          echo " ACR Server  : ${{ needs.infra.outputs.acr_server }}"
+          echo " Ingress IP  : $(kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || true)"
           echo "──────────────────────────────────────────"
           kubectl get nodes
-          echo ""
-          echo "Ingress External IP:"
-          kubectl -n ingress-nginx get svc ingress-nginx-controller \
-            -o jsonpath="{.status.loadBalancer.ingress[0].ip}" || true
-          echo ""

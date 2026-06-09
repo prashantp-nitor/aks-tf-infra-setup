@@ -45,12 +45,4 @@ module "user_node_pool" {
   tags                  = local.tags
 }
 
-module "acr" {
-  source = "./modules/acr"
-
-  resource_group_name = data.azurerm_resource_group.rg.name
-  location            = data.azurerm_resource_group.rg.location
-  acr_name            = local.acr_name
-  acr_sku             = var.acr_sku
-  tags                = local.tags
-}
+# Using Docker Hub instead of ACR — no Azure role assignment permission required
