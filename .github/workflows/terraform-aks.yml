@@ -21,8 +21,10 @@ jobs:
       contents: read
 
     outputs:
-      rg:  ${{ steps.tf.outputs.RG }}
-      aks: ${{ steps.tf.outputs.AKS }}
+      rg:         ${{ steps.tf.outputs.RG }}
+      aks:        ${{ steps.tf.outputs.AKS }}
+      acr_name:   ${{ steps.tf.outputs.ACR_NAME }}
+      acr_server: ${{ steps.tf.outputs.ACR_SERVER }}
 
     steps:
       - name: Checkout
@@ -82,6 +84,10 @@ jobs:
           terraform import 'module.user_node_pool.azurerm_kubernetes_cluster_node_pool.this' \
             "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.ContainerService/managedClusters/ppowar-aks/agentPools/user" 2>/dev/null || true
 
+          echo "==> Importing ACR..."
+          terraform import module.acr.azurerm_container_registry.acr \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.ContainerRegistry/registries/ppowaracr" 2>/dev/null || true
+
       - name: Terraform Plan
         working-directory: terraform
         run: terraform plan -out=tfplan
@@ -105,6 +111,8 @@ jobs:
         run: |
           echo "RG=$(terraform output -raw resource_group_name)"  >> $GITHUB_OUTPUT
           echo "AKS=$(terraform output -raw aks_name)"            >> $GITHUB_OUTPUT
+          echo "ACR_NAME=$(terraform output -raw acr_name)"       >> $GITHUB_OUTPUT
+          echo "ACR_SERVER=$(terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
 
   # ────────────────────────────────────────────────────────────────────────────
   bootstrap:
@@ -145,6 +153,27 @@ jobs:
       - name: Apply namespaces
         run: kubectl apply -f k8s/namespaces.yaml
 
+      - name: Create ACR ImagePullSecret
+        run: |
+          ACR_PASSWORD=$(az acr credential show \
+            --name ${{ needs.infra.outputs.acr_name }} \
+            --query "passwords[0].value" -o tsv)
+
+          for ns in default monitoring; do
+            kubectl create secret docker-registry acr-pull-secret \
+              --docker-server=${{ needs.infra.outputs.acr_server }} \
+              --docker-username=${{ needs.infra.outputs.acr_name }} \
+              --docker-password="$ACR_PASSWORD" \
+              --namespace=$ns \
+              --dry-run=client -o yaml | kubectl apply -f -
+          done
+
+      - name: Apply resource limits to all namespaces
+        run: |
+          for ns in default monitoring ingress-nginx cert-manager; do
+            kubectl apply -f k8s/limit-range.yaml -n $ns
+          done
+
       - name: Add Helm repositories
         run: |
           helm repo add jetstack      https://charts.jetstack.io
@@ -173,6 +202,7 @@ jobs:
         run: |
           echo "──────────────────────────────────────────"
           echo " AKS Cluster : ${{ needs.infra.outputs.aks }}"
+          echo " ACR Server  : ${{ needs.infra.outputs.acr_server }}"
           echo "──────────────────────────────────────────"
           kubectl get nodes
           echo ""

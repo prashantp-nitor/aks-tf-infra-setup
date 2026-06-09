@@ -9,6 +9,6 @@ output "acr_name" {
 }
 
 output "login_server" {
-  description = "Login server URL for the container registry"
+  description = "Login server URL (e.g. ppowaracr.azurecr.io)"
   value       = azurerm_container_registry.acr.login_server
 }

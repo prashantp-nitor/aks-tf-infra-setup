@@ -66,6 +66,12 @@ variable "user_node_max_count" {
   default     = 5
 }
 
+# ── ACR ───────────────────────────────────────────────────────────────────────
+variable "acr_sku" {
+  description = "ACR SKU: Basic | Standard | Premium"
+  default     = "Standard"
+}
+
 # ── Networking ────────────────────────────────────────────────────────────────
 variable "vnet_address_space" {
   description = "VNet address space"

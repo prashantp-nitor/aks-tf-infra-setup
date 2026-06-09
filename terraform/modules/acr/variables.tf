@@ -7,7 +7,7 @@ variable "location" {
 }
 
 variable "acr_name" {
-  description = "ACR name — globally unique, alphanumeric only"
+  description = "ACR name — globally unique, alphanumeric only, 5-50 chars"
   type        = string
 }
 
@@ -15,11 +15,6 @@ variable "acr_sku" {
   description = "ACR SKU: Basic | Standard | Premium"
   type        = string
   default     = "Standard"
-}
-
-variable "kubelet_identity_object_id" {
-  description = "Object ID of the AKS kubelet identity for AcrPull role assignment"
-  type        = string
 }
 
 variable "tags" {
